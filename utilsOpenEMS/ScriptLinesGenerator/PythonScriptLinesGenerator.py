@@ -709,7 +709,7 @@ class PythonScriptLinesGenerator(OctaveScriptLinesGenerator):
                     genScript += "f0 = " + str(currSetting.sinusodial['f0']) + "*" + str(
                         currSetting.getUnitsAsNumber(currSetting.units)) + "\n"
                     if not definitionsOnly:
-                        genScript += "FDTD.SetSinusExcite(fc);\n"
+                        genScript += "FDTD.SetSinusExcite(f0);\n"
                     genScript += "max_res = C0 / f0 / 20\n"
                     self.maxGridResolution_m = 3e8 / (
                                 currSetting.sinusodial['f0'] * currSetting.getUnitsAsNumber(currSetting.units) * 20)
