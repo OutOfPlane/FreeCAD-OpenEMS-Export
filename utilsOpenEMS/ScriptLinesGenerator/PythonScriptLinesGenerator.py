@@ -736,6 +736,8 @@ class PythonScriptLinesGenerator(OctaveScriptLinesGenerator):
                     genScript += "max_res = 0\n"
                     self.maxGridResolution_m = 0
                     pass
+                elif currSetting.getType() == 'step':
+                    genScript += 'FDTD.SetStepExcite(1)'
                 pass
 
                 genScript += "\n"
