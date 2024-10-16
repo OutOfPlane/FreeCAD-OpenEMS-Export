@@ -73,7 +73,7 @@ class KiCADImporterToolDialog(QtCore.QObject):
 		self.form.close()
 
 	def buttonOpenFileClicked(self):
-		filename, filter = QtWidgets.QFileDialog.getOpenFileName(parent=self.form, caption='Open KiCAD PCB file', dir=self.APP_DIR)
+		filename, filter = QtWidgets.QFileDialog.getOpenFileName(parent=self.form, caption='Open KiCAD PCB file', dir=self.APP_DIR, filter="KiCad PCBs (*.kicad_pcb);;All Files(*.*)")
 		self.form.inputFileLineEdit.setText(filename)
 
 	def buttonImportPcbClicked(self):

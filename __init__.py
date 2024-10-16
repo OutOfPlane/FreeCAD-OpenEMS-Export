@@ -5,6 +5,7 @@
 import bpy
 from PySide2 import QtGui, QtCore, QtWidgets
 from .ExportOpenEMSDialog import *
+from .freecadTest import *
 
 bl_info = {
     "name": "OpenEMS Simulation",
