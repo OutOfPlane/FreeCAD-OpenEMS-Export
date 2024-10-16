@@ -3,6 +3,7 @@ import FreeCAD as fc
 import Part as pt
 import Sketcher as sk
 import numpy as np
+import Draft as dt
 
 class keyValueSet():
     def __init__(self):
@@ -161,7 +162,7 @@ class line(geometry):
 
 
 
-    def makePart(self, z_coord):
+    def makePart(self, z_coord, thickness, cbmake):
         dx = self.x2 - self.x1
         dy = self.y2 - self.y1
         ox, oy = getNormOrthoVect(dx, dy)
@@ -171,27 +172,133 @@ class line(geometry):
         ux = (dx/np.sqrt(dx**2 + dy**2))*self.width
         uy = (dy/np.sqrt(dx**2 + dy**2))*self.width
         out = []
-        out.append(
-            pt.makePolygon([
+        
+        prt = cbmake()
+        prt.Shape = pt.makePolygon([
                 fc.Vector(self.x1 - ox, self.y1 - oy, z_coord),
                 fc.Vector(self.x2 - ox, self.y2 - oy, z_coord),
                 fc.Vector(self.x2 + ox, self.y2 + oy, z_coord),
                 fc.Vector(self.x1 + ox, self.y1 + oy, z_coord),
                 fc.Vector(self.x1 - ox, self.y1 - oy, z_coord),
             ])
+        out.append(
+            prt
         )
 
-        out.append(
-            pt.makeCircle(
+        prt = cbmake()
+        prt.Shape = pt.makeCircle(
                 self.width/2,
                 fc.Vector(self.x1, self.y1, z_coord)
-        ))
+        )
         out.append(
-            pt.makeCircle(
+            prt
+        )
+
+        prt = cbmake()
+        prt.Shape = pt.makeCircle(
                 self.width/2,
                 fc.Vector(self.x2, self.y2, z_coord)
-        ))
-        return out
+        )
+        out.append(
+            prt
+        )
+
+        out_ex = []
+        for o in out:
+            out_ex.append(dt.extrude(o, fc.Vector(0,0, thickness), solid=True))
+        
+        return out_ex
+
+class polygon(geometry):
+    def _pointListToPolygons(self):
+        table = {}
+        poly_holes = []
+        self.xylist.append(self.xylist[0])
+        for i in range(len(self.xylist)-1):
+            table[str((self.xylist[i],self.xylist[i+1]))] = i
+
+        # This is how kicad represents holes in zone polygon
+        #  ---------------------------
+        #  |    -----      ----      |
+        #  |    |   |======|  |      |
+        #  |====|   |      |  |      |
+        #  |    -----      ----      |
+        #  |                         |
+        #  ---------------------------
+        # It uses a single polygon with coincide edges of oppsite
+        # direction (shown with '=' above) to dig a hole. And one hole
+        # can lead to another, and so forth. The following `build()`
+        # function is used to recursively discover those holes, and
+        # cancel out those '=' double edges, which will surely cause
+        # problem if left alone. The algorithm assumes we start with a
+        # point of the outer polygon.
+        def build(start,end):
+            results = []
+            while start<end:
+                # We used the reverse edge as key to search for an
+                # identical edge of oppsite direction. NOTE: the
+                # algorithm only works if the following assumption is
+                # true, that those hole digging double edges are of
+                # equal length without any branch in the middle
+                key = str((self.xylist[start+1],self.xylist[start]))
+                try:
+                    i = table[key]
+                    del table[key]
+                except KeyError:
+                    # `KeyError` means its a normal edge, add the line.
+                    results.append(self.xylist[start])
+                    results.append(self.xylist[start+1])
+                    start += 1
+                    continue
+
+                # We found the start of a double edge, treat all edges
+                # in between as holes and recurse. Both of the double
+                # edges are skipped.
+                h = build(start+1,i)
+                if h:
+                    poly_holes.append(h)
+                start = i+1
+            return results
+        
+        edges = build(0,len(self.xylist)-1)
+        return edges, poly_holes
+
+
+    def fromKeyValueSet(data: keyValueSet) -> "polygon":
+        inpType = data.getKey()
+        if(inpType == "filled_polygon"):
+            xypts = []
+            pts = data.searchUnique("pts")
+            for p in pts:
+                if(type(p) is keyValueSet):
+                    xypts.append([float(p.get()[0]), float(p.get()[1])])
+            return polygon(xypts)
+        else:
+            raise Exception(f"unsupported Polygon Type: {inpType}")
+
+    def __init__(self, xylist):
+        super().__init__()
+        self.xylist = xylist
+
+    def moveRealtive(self, dx, dy):
+        dx = float(dx)
+        dy = float(dy)
+        for i in range(len(self.xylist)):
+            self.xylist[i][0] += dx
+            self.xylist[i][1] += dy
+
+    def makePart(self, z_coord, thickness, cbmake):
+
+        xy, holes = self._pointListToPolygons()
+        polys = []
+        obj = cbmake()
+        shape = [pt.makePolygon([fc.Vector(p[0], p[1], z_coord) for p in xy])]
+
+        for h in holes:
+            shape.append(pt.makePolygon([fc.Vector(p[0], p[1], z_coord) for p in h]))
+        
+        obj.Shape = pt.makeCompound(shape)
+        return [dt.extrude(obj, fc.Vector(0,0, thickness), solid=True)]
 
 class rect(geometry):
     def fromKeyValueSet(data: keyValueSet) -> "rect":
@@ -220,14 +327,16 @@ class rect(geometry):
         self.x += dx
         self.y += dy
 
-    def makePart(self, z_coord):
-        return [pt.makePolygon([
+    def makePart(self, z_coord, thickness, cbmake):
+        obj = cbmake()
+        obj.Shape = pt.makePolygon([
             fc.Vector(self.x - self.w/2, self.y - self.h/2, z_coord),
             fc.Vector(self.x + self.w/2, self.y - self.h/2, z_coord),
             fc.Vector(self.x + self.w/2, self.y + self.h/2, z_coord),
             fc.Vector(self.x - self.w/2, self.y + self.h/2, z_coord),
             fc.Vector(self.x - self.w/2, self.y - self.h/2, z_coord)
-        ])]
+        ])
+        return [dt.extrude(obj, fc.Vector(0,0, thickness), solid=True)]
         
 class circle(geometry):
     def fromKeyValueSet(data: keyValueSet) -> "circle":
@@ -237,7 +346,7 @@ class circle(geometry):
             if(padType == "circle"):
                 sizex, sizey = data.searchUnique("size")
                 atx, aty, *rot = data.searchUnique("at")
-                return circle(atx, aty, sizex)
+                return circle(atx, aty, float(sizex)/2)
             else:
                 raise Exception(f"unsupported Pad Type: {padType}")
         else:
@@ -255,8 +364,10 @@ class circle(geometry):
         self.x += dx
         self.y += dy
 
-    def makePart(self, z_coord):
-        return [pt.makeCircle(self.r, fc.Vector(self.x, self.y, z_coord))]
+    def makePart(self, z_coord, thickness, cbmake):
+        obj = cbmake()
+        obj.Shape = pt.makeCircle(self.r, fc.Vector(self.x, self.y, z_coord))
+        return [dt.extrude(obj, fc.Vector(0,0, thickness), solid=True)]
     
 
 def padFromKeyValueSet(data: keyValueSet) -> geometry:
@@ -315,6 +426,9 @@ class kiCadPCB():
     def getFootprints(self):
         return self._data.search("footprint")
     
+    def getZones(self):
+        return self._data.search("zone")
+    
     def getGridOrigin(self):
         return strToFloatList(self._data.search("setup")[0].searchUnique("grid_origin"))
     
@@ -368,5 +482,29 @@ class kiCadPCB():
                 pd.moveRealtive(fp_position[0], fp_position[1])
                 pd.moveRealtive(-orig[0], -orig[1])
                 out[netLookup[pad_net]].append(pd)
+
+        return out
+    
+    def getZonesByNet(self):
+        out = {}
+        netLookup = {}
+        for n in self.getNets():
+            netLookup[n.get()[0]] = n.get()[1]
+            out[n.get()[1]] = []
+
+        signal_layers = self.getSignalLayerNames()
+        orig = self.getGridOrigin()
+
+        zones = self.getZones()
+        for zo in zones:
+            zo_net = zo.searchUnique("net")[0]
+            poly = zo.search("filled_polygon")
+            for p in poly:
+                poly_layer = p.searchUnique("layer")[0]
+                if(not poly_layer in signal_layers):
+                    continue
+                pd = polygon.fromKeyValueSet(p)
+                pd.moveRealtive(-orig[0], -orig[1])
+                out[netLookup[zo_net]].append(pd)
 
         return out

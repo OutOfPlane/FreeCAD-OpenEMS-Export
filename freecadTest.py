@@ -18,26 +18,31 @@ pcb = kr.kiCadPCB(kr.parseBoard("/home/julius/Projects/openEMS_test/openEMS_test
 nets = pcb.getNetNames()
 segs = pcb.getSegmentsByNet()
 pads = pcb.getPadsByNet()
+poly = pcb.getZonesByNet()
 
 ptname = 0
 
 fusions = []
 
+def partmaker():
+    global ptname
+    obj = doc.addObject("Part::Feature", "part_" + str(ptname))
+    ptname += 1
+    return obj
+
 for net in nets:
     netparts = []
     for segment in segs[net]:
-        for part in segment.makePart(0):
-            obj = doc.addObject("Part::Feature", "part_" + str(ptname))
-            obj.Shape = part
-            ptname += 1
-            netparts.append(dt.extrude(obj, fc.Vector(0,0,0.1), solid=True))
+        for part in segment.makePart(0, 0.1, partmaker):
+            netparts.append(part)
         
     for pad in pads[net]:
-        for part in pad.makePart(0):
-            obj = doc.addObject("Part::Feature", "part_" + str(ptname))
-            obj.Shape = part
-            ptname += 1
-            netparts.append(dt.extrude(obj, fc.Vector(0,0,0.1), solid=True))
+        for part in pad.makePart(0, 0.1, partmaker):
+            netparts.append(part)
+
+    for po in poly[net]:
+        for part in po.makePart(0, 0.1, partmaker):
+            netparts.append(part)
     if(len(netparts)):        
         if(len(netparts) > 1):
             fus = doc.addObject("Part::MultiFuse","Net_" + net)
